@@ -24,8 +24,8 @@ ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int r
     // espalhar os vetores locais para cada processo
     MPI_Scatter(coluna, tamanho_local, MPI_ValorIndice, vetor_local, tamanho_local, MPI_ValorIndice, raiz, MPI_COMM_WORLD);
     // print de teste de como ficou o vetor local
-    printf("Vetor local do rank %d:\n", rank);
-    imprimir_vetor_valor_indice(vetor_local, tamanho_local);
+    // printf("Vetor local do rank %d:\n", rank);
+    // imprimir_vetor_valor_indice(vetor_local, tamanho_local);
     // convertendo o vetor local recebido para modulo
     aplicar_modulo(vetor_local, tamanho_local);
     // achando elemento de maior módulo
@@ -68,8 +68,8 @@ void main(int argc, char** argv) {
         coluna = extrair_coluna(matriz, n, 0);
         printf("Matriz gerada:\n");
         imprimir_matriz(matriz, n);
-        printf("Coluna extraída:\n");
-        imprimir_vetor_valor_indice(coluna, n);
+        // printf("Coluna extraída:\n");
+        // imprimir_vetor_valor_indice(coluna, n);
     }
 
     int indice_pivo = achar_maior_da_coluna(coluna, n, 0).indice; // somente a raiz não contém lixo de memória

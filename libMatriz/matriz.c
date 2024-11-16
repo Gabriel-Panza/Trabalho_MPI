@@ -2,6 +2,11 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
+#include "matriz.h"
+#include <mpi.h>
+#include <stddef.h>
+#include <math.h>
+
 
 // Função para criar uma matriz n x (n+1) com valores aleatórios (double)
 double** criarMatrizAleatoria(int n) {
@@ -55,7 +60,7 @@ void multiplicarPorPrimos(double** matriz, int n, double* primos) {
 }
 
 // Função para imprimir a matriz
-void imprimirMatriz(double** matriz, int n) {
+void imprimir_matriz(double** matriz, int n) {
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n + 1; j++) { // Considera n + 1 colunas para Ax = B
             printf("%10.2f ", matriz[i][j]); // Exibe com duas casas decimais
@@ -65,7 +70,7 @@ void imprimirMatriz(double** matriz, int n) {
 }
 
 // Função para liberar a memória da matriz
-void liberarMatriz(double** matriz, int n) {
+void liberar_matriz(double** matriz, int n) {
     for (int i = 0; i < n; i++) {
         free(matriz[i]);
     }
@@ -73,11 +78,15 @@ void liberarMatriz(double** matriz, int n) {
 }
 
 // Função para imprimir o vetor de primos
-void imprimirVetor(double* vetor, int n) {
+void imprimir_vetor_valor_indice(ValorIndice* vetor, int n) {
+    printf("[");
     for (int i = 0; i < n; i++) {
-        printf("%.2f ", vetor[i]);
+        printf("(%.2f, %d)", vetor[i].valor, vetor[i].indice);
+        if (i < n - 1) {
+            printf(", ");
+        }
     }
-    printf("\n");
+    printf("]\n");
 }
 
 // Função para criar a matriz e realizar as operações
@@ -96,4 +105,75 @@ double** criar_matriz(int n) {
 
     // Retorna a matriz resultante
     return matriz;
+}
+
+void troca_linhas(double** matriz, int n, int linha1, int linha2) {
+    for (int j = 0; j < n + 1; j++) {
+        double temp = matriz[linha1][j];
+        matriz[linha1][j] = matriz[linha2][j];
+        matriz[linha2][j] = temp;
+    }
+}
+
+double imprimir_vetor_double(double* vetor, int n){
+    printf("[");
+    for(int i=0; i < n-1; i++){
+        printf("%f, ", vetor[i]);
+    }
+    printf("%f]", vetor[n-1]);
+}
+
+ValorIndice achar_maior_local(ValorIndice* vetor, int tamanho) {
+    ValorIndice maior = vetor[0];
+    for (int i = 1; i < tamanho; i++) {
+        if (vetor[i].valor > maior.valor) {
+            maior = vetor[i];
+        }
+    }
+
+    return maior;
+}
+
+void aplicar_modulo(ValorIndice* vetor, int tamanho) {
+    for (int i = 0; i < tamanho; i++) {
+        vetor[i].valor = fabs(vetor[i].valor);
+    }
+}
+
+void comparar_maximo(void* invec, void* inoutvec, int* len, MPI_Datatype* datatype) {
+    ValorIndice* in = (ValorIndice*)invec;
+    ValorIndice* inout = (ValorIndice*)inoutvec;
+
+    for (int i = 0; i < *len; i++) {
+        if (in[i].valor > inout[i].valor) {
+            inout[i] = in[i];
+        }
+    }
+}
+
+ValorIndice* extrair_coluna(double** matriz, int n, int indiceColuna) {
+    // Validar se o índice da coluna é válido
+    int linhas = n;
+    int colunas = n+1;
+
+    if (indiceColuna < 0 || indiceColuna >= colunas) {
+        printf("Erro: Índice de coluna fora do intervalo.\n");
+        return NULL;
+    }
+
+    // Alocar memória para o array de ValorIndice
+    ValorIndice* resultado = (ValorIndice*)malloc(linhas * sizeof(ValorIndice));
+    if (resultado == NULL) {
+        printf("Erro ao alocar memória.\n");
+        return NULL;
+    }
+
+    // Preencher o array com os valores e índices da coluna
+    for (int i = 0; i < linhas; i++) {
+        resultado[i].valor = matriz[i][indiceColuna];
+        resultado[i].indice = i;
+    }
+
+    // Retornar o tamanho do resultado
+    return resultado;
 }

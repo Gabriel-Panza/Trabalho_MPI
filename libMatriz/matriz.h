@@ -8,6 +8,9 @@ typedef struct valor_indice{
     int indice;
 } ValorIndice;
 
+ValorIndice* extrair_coluna(double** matriz, int linhas, int colunas, int indiceColuna);
+
+
 // Função para criar uma matriz n x n com valores aleatórios
 double** criarMatrizAleatoria(int n);
 
@@ -40,7 +43,5 @@ double imprimir_vetor_double(double* vetor, int n);
 void aplicar_modulo(ValorIndice* vetor, int tamanho);
 
 void comparar_maximo(void* invec, void* inoutvec, int* len, MPI_Datatype* datatype);
-
-ValorIndice* extrair_coluna(double** matriz, int n, int indiceColuna);
 
 #endif // MATRIZ_PRIMOS_H

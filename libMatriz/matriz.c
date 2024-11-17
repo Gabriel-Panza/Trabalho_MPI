@@ -151,13 +151,10 @@ void comparar_maximo(void* invec, void* inoutvec, int* len, MPI_Datatype* dataty
     }
 }
 
-ValorIndice* extrair_coluna(double** matriz, int n, int indiceColuna) {
+ValorIndice* extrair_coluna(double** matriz, int linhas, int colunas, int indiceColuna) {
     // Validar se o índice da coluna é válido
-    int linhas = n;
-    int colunas = n+1;
-
     if (indiceColuna < 0 || indiceColuna >= colunas) {
-        printf("Erro: Índice de coluna fora do intervalo.\n");
+        printf("Erro: Índice de coluna fora do intervalo: indice = %d, colunas = %d\n", indiceColuna, colunas);
         return NULL;
     }
 
@@ -174,6 +171,6 @@ ValorIndice* extrair_coluna(double** matriz, int n, int indiceColuna) {
         resultado[i].indice = i;
     }
 
-    // Retornar o tamanho do resultado
+    // Retornar o array com os valores extraídos
     return resultado;
 }

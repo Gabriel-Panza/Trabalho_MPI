@@ -4,43 +4,7 @@
 #include <mpi.h>
 #include <stddef.h>
 #include "libMatriz/matriz.h"
-
-ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int raiz){
-    int rank, num_procs;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
-    int tamanho_local = tamanho_coluna / num_procs;
-    ValorIndice* vetor_local = malloc(sizeof(ValorIndice) * tamanho_local);
-
-    // Criar o tipo derivado MPI para ValorIndice
-    MPI_Datatype MPI_ValorIndice;
-    int blocklengths[2] = {1, 1};
-    MPI_Aint offsets[2];
-    offsets[0] = offsetof(ValorIndice, valor);
-    offsets[1] = offsetof(ValorIndice, indice);
-    MPI_Datatype types[2] = {MPI_DOUBLE, MPI_INT};
-    MPI_Type_create_struct(2, blocklengths, offsets, types, &MPI_ValorIndice);
-    MPI_Type_commit(&MPI_ValorIndice);
-    // espalhar os vetores locais para cada processo
-    MPI_Scatter(coluna, tamanho_local, MPI_ValorIndice, vetor_local, tamanho_local, MPI_ValorIndice, raiz, MPI_COMM_WORLD);
-    // print de teste de como ficou o vetor local
-    // printf("Vetor local do rank %d:\n", rank);
-    // imprimir_vetor_valor_indice(vetor_local, tamanho_local);
-    // convertendo o vetor local recebido para modulo
-    aplicar_modulo(vetor_local, tamanho_local);
-    // achando elemento de maior módulo
-    ValorIndice maior_local = achar_maior_local(vetor_local, tamanho_local);
-    // Declarando operação de comparação e passando resultados para cima na árvore de computação 
-    ValorIndice resultado_final;
-    MPI_Op op_comparar_maximo;
-    MPI_Op_create(comparar_maximo, 1, &op_comparar_maximo);
-    MPI_Reduce(&maior_local, &resultado_final, 1, MPI_ValorIndice, op_comparar_maximo, raiz, MPI_COMM_WORLD);
-    free(vetor_local);
-    MPI_Type_free(&MPI_ValorIndice);
-    MPI_Op_free(&op_comparar_maximo);
-
-    return resultado_final;
-}
+#include "gauss_op.c"
 
 void main(int argc, char** argv) {
     int rank, size, tam;
@@ -65,22 +29,33 @@ void main(int argc, char** argv) {
     // Processo rank 0 cria a matriz e extrai a coluna
     if (rank == 0) {
         matriz = criar_matriz(n);
-        coluna = extrair_coluna(matriz, n, 0);
         printf("Matriz gerada:\n");
         imprimir_matriz(matriz, n);
-        // printf("Coluna extraída:\n");
-        // imprimir_vetor_valor_indice(coluna, n);
     }
+    for(int i=0; i<n; i++){
+        int tamanho_coluna = n-i;
+        if(rank == 0){
+            coluna = extrair_coluna(&matriz[i], tamanho_coluna, n, i);
+            // &matriz[i] retorna uma matriz contendo somente linhas a partir de i (n-i linhas totais)
+            printf("\n\n");
+            printf("Passando tamanho_coluna = %d, indice_coluna = %d\n", tamanho_coluna, i);
+            printf("Coluna extraída:\n");
+            imprimir_vetor_valor_indice(coluna, tamanho_coluna);
+        }
+        int i_pivo_coluna = achar_maior_da_coluna(coluna, tamanho_coluna, 0).indice; 
+        // sobre a linha acima:
+        // 1. somente a raiz não contém lixo de memória
+        // 2. o vetor coluna é espalhado (scatter) dentro da função, não sendo necessário se preocupar se outros ranks tem lixo em coluna.
+        // 3. o índice retornado é em relação à coluna, que tem linhas do que a matriz da segunda iteração em diante
 
-    int indice_pivo = achar_maior_da_coluna(coluna, n, 0).indice; // somente a raiz não contém lixo de memória
-    if(rank == 0){
-        printf("Linha %d com maior pivô: \n", indice_pivo);
-        imprimir_vetor_double(matriz[indice_pivo], n);
-        printf("\n");
-        troca_linhas(matriz, n, 0, indice_pivo);
-        printf("Matriz com pivô da linha 0 maximizado: \n");
-        imprimir_matriz(matriz, n);
-
+        if(rank == 0){
+            int i_pivo_matriz = i + i_pivo_coluna; // para obter um índice em relação à matriz, em vez da coluna com linhas a menos.
+            printf("Maior valor encontrado: %f\n", coluna[i_pivo_coluna].valor);
+            troca_linhas(matriz, n, i, i_pivo_matriz);
+            printf("Matriz após a troca:\n");
+            imprimir_matriz(matriz, n);
+        }
+        
     }
     // Libera os recursos da matriz no processo rank 0
     if (rank == 0) {

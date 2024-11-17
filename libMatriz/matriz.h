@@ -38,7 +38,7 @@ void troca_linhas(double** matriz, int n, int linha1, int linha2);
 
 ValorIndice achar_maior_local(ValorIndice* vetor, int tamanho);
 
-double imprimir_vetor_double(double* vetor, int n);
+void imprimir_vetor_double(double* vetor, int n);
 
 void aplicar_modulo(ValorIndice* vetor, int tamanho);
 

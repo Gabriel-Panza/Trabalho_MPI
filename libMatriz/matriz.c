@@ -115,7 +115,7 @@ void troca_linhas(double** matriz, int n, int linha1, int linha2) {
     }
 }
 
-double imprimir_vetor_double(double* vetor, int n){
+void imprimir_vetor_double(double* vetor, int n){
     printf("[");
     for(int i=0; i < n-1; i++){
         printf("%f, ", vetor[i]);

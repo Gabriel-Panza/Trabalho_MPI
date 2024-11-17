@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
         imprimir_matriz(matriz, n);
     }
     pivoteamento_parcial(matriz, n);
+    normalizar_matriz(matriz, n);
     // Libera os recursos da matriz no processo rank 0
     if (rank == 0) {
         liberar_matriz(matriz, n); // Libere a matriz

@@ -107,14 +107,6 @@ double** criar_matriz(int n) {
     return matriz;
 }
 
-void troca_linhas(double** matriz, int n, int linha1, int linha2) {
-    for (int j = 0; j < n + 1; j++) {
-        double temp = matriz[linha1][j];
-        matriz[linha1][j] = matriz[linha2][j];
-        matriz[linha2][j] = temp;
-    }
-}
-
 void imprimir_vetor_double(double* vetor, int n){
     printf("[");
     for(int i=0; i < n-1; i++){

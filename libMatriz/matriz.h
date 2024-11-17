@@ -34,8 +34,6 @@ void imprimir_vetor_valor_indice(ValorIndice* vetor, int n);
 // Função que combina todas as etapas
 double** criar_matriz(int n);
 
-void troca_linhas(double** matriz, int n, int linha1, int linha2);
-
 ValorIndice achar_maior_local(ValorIndice* vetor, int tamanho);
 
 void imprimir_vetor_double(double* vetor, int n);

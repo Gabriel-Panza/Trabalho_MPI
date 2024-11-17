@@ -5,6 +5,63 @@
 #include <stddef.h>
 #include "libMatriz/matriz.h"
 
+void troca_linhas(double **matriz, int n, int linha_1, int linha_2) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // Tamanho do bloco para cada processo
+    int bloco = n / size;
+    int resto = n % size; // Para lidar com tamanhos não divisíveis por size
+    int local_count = bloco + (rank < resto ? 1 : 0);
+
+    // Vetores locais para os sub-blocos das linhas a serem trocadas
+    double *sub_linha_1 = malloc(local_count * sizeof(double));
+    double *sub_linha_2 = malloc(local_count * sizeof(double));
+
+    // Vetores temporários para distribuir dados no processo 0
+    double *linha_1_flat = NULL;
+    double *linha_2_flat = NULL;
+
+    if (rank == 0) {
+        linha_1_flat = matriz[linha_1];
+        linha_2_flat = matriz[linha_2];
+    }
+
+    // Scatter para dividir as linhas em pedaços
+    int *send_counts = malloc(size * sizeof(int));
+    int *displs = malloc(size * sizeof(int));
+    int offset = 0;
+
+    for (int i = 0; i < size; i++) {
+        send_counts[i] = bloco + (i < resto ? 1 : 0);
+        displs[i] = offset;
+        offset += send_counts[i];
+    }
+
+    MPI_Scatterv(linha_1_flat, send_counts, displs, MPI_DOUBLE, sub_linha_1, local_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(linha_2_flat, send_counts, displs, MPI_DOUBLE, sub_linha_2, local_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Cada processo troca os elementos localmente
+    for (int i = 0; i < local_count; i++) {
+        double temp = sub_linha_1[i];
+        sub_linha_1[i] = sub_linha_2[i];
+        sub_linha_2[i] = temp;
+    }
+
+    // Processo 0 recolhe os resultados com Reduce
+    MPI_Gatherv(sub_linha_1, local_count, MPI_DOUBLE, linha_1_flat, send_counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(sub_linha_2, local_count, MPI_DOUBLE, linha_2_flat, send_counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+
+    // Liberar memória local
+    free(sub_linha_1);
+    free(sub_linha_2);
+    free(send_counts);
+    free(displs);
+}
+
+
 ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int raiz) {
     int rank, num_procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -93,14 +150,134 @@ void pivoteamento_parcial(double** matriz, int n){
     // 1. somente a raiz não contém lixo de memória
     // 2. o vetor coluna é espalhado (scatter) dentro da função, não sendo necessário se preocupar se outros ranks tem lixo em coluna.
     // 3. o índice retornado é em relação à coluna, que tem linhas do que a matriz da segunda iteração em diante
-
-    if(rank == 0){
-        int i_pivo_matriz = i + i_pivo_coluna; // para obter um índice em relação à matriz, em vez da coluna com linhas a menos.
+    int i_pivo_matriz;
+    if (rank == 0) {
+        i_pivo_matriz = i + i_pivo_coluna; // para obter um índice em relação à matriz, em vez da coluna com linhas a menos.
         printf("Maior valor encontrado: %f\n", coluna[i_pivo_coluna].valor);
-        troca_linhas(matriz, n, i, i_pivo_matriz);
+    }   
+
+    MPI_Bcast(&i_pivo_matriz, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    troca_linhas(matriz, n, i, i_pivo_matriz);
+    if(rank == 0){
         printf("Matriz após a troca:\n");
         imprimir_matriz(matriz, n);
     }
         
     }
 }
+
+void multiplicar_linha(double *vetor, int tamanho, double valor) {
+    int rank, num_procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+
+    int tamanho_local = tamanho / num_procs;
+    int resto = tamanho % num_procs;
+
+    // Calcula os tamanhos locais para todos os processos
+    int *tamanhos = (int *)malloc(num_procs * sizeof(int));
+    int *deslocamentos = (int *)malloc(num_procs * sizeof(int));
+    for (int i = 0; i < num_procs; i++) {
+        tamanhos[i] = tamanho_local + (i < resto ? 1 : 0);
+        deslocamentos[i] = (i == 0) ? 0 : deslocamentos[i - 1] + tamanhos[i - 1];
+    }
+
+    double *subvetor = (double *)malloc(tamanhos[rank] * sizeof(double));
+
+    // Distribui o vetor para os processos
+    MPI_Scatterv(vetor, tamanhos, deslocamentos, MPI_DOUBLE,
+                 subvetor, tamanhos[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Multiplica localmente
+    for (int i = 0; i < tamanhos[rank]; i++) {
+        subvetor[i] *= valor;
+    }
+
+    // Reúne os resultados
+    MPI_Gatherv(subvetor, tamanhos[rank], MPI_DOUBLE,
+                vetor, tamanhos, deslocamentos, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Libera memória
+    free(tamanhos);
+    free(deslocamentos);
+    free(subvetor);
+}
+
+
+void scatter_linhas(double **matriz, double *linha_local, int n, int i_linha) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    if (rank == 0) {
+        // Scatter apenas a linha necessária
+        MPI_Scatter(matriz[i_linha], n / size, MPI_DOUBLE, linha_local, n / size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    } else {
+        MPI_Scatter(NULL, n / size, MPI_DOUBLE, linha_local, n / size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
+}
+
+void normalizar_linha(double *linha_local, int n_local, double pivo) {
+    for (int j = 0; j < n_local; j++) {
+        linha_local[j] /= pivo;
+    }
+}
+
+void gather_linha(double *linha_local, double *linha_global, int n, int i_linha) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    MPI_Gather(linha_local, n / size, MPI_DOUBLE, linha_global, n / size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Compartilhar a linha normalizada com todos os processos
+    MPI_Bcast(linha_global, n, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+}
+
+void normalizar_matriz(double **matriz, int n) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    double *linha_local = malloc((n / size) * sizeof(double)); // Parte da linha que cada processo manipula
+    double *linha_global = malloc(n * sizeof(double));         // Linha completa para comunicação
+
+    for (int i = 0; i < n; i++) {
+        double pivo;
+
+        // Apenas o rank 0 calcula o pivô
+        if (rank == 0) {
+            pivo = matriz[i][i];
+            if (pivo == 0.0) {
+                fprintf(stderr, "Erro: o pivô da linha %d é zero. Não é possível normalizar.\n", i);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+        }
+
+        // Compartilhar o pivô com todos os processos
+        MPI_Bcast(&pivo, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+        // Scatter da linha
+        scatter_linhas(matriz, linha_local, n, i);
+
+        // Normalizar localmente
+        normalizar_linha(linha_local, n / size, pivo);
+
+        // Gather da linha normalizada
+        gather_linha(linha_local, linha_global, n, i);
+
+        // Apenas o rank 0 atualiza a matriz
+        if (rank == 0) {
+            for (int j = 0; j < n; j++) {
+                matriz[i][j] = linha_global[j];
+            }
+        }
+    }
+
+    free(linha_local);
+    free(linha_global);
+}
+
+
+

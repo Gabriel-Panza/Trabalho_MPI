@@ -28,13 +28,30 @@ int main(int argc, char** argv) {
         printf("Matriz gerada:\n");
         imprimir_matriz(matriz, n);
     }
+
+     // Início da medição de tempo
+    double start_time = MPI_Wtime();
+
+    // Processo de pivoteamento parcial
     pivoteamento_parcial(matriz, n);
+    
+    // Processo de normalização dos pivôs da matriz
     normalizar_matriz(matriz, n);
+
+    // Processo raiz realiza a substituição retroativa
+    substituicao_retroativa(matriz, n, rank, size);
+
+    // Fim da medição de tempo
+    double end_time = MPI_Wtime();
+    if (rank == 0) {
+        printf("\nExecution Time: %f seconds\n", end_time - start_time);
+    }
+
     // Libera os recursos da matriz no processo rank 0
     if (rank == 0) {
         liberar_matriz(matriz, n); // Libere a matriz
     }
-    // printf("Rank %d finalizado.\n", rank);
+
     MPI_Finalize();
     return 0;
 }

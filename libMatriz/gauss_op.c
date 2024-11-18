@@ -130,10 +130,12 @@ ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int r
     return resultado_final;
 }
 
-void somar_linha(double **matriz, int N, int rank, int size, int i, int k) {
-    int tamanho_local = N / size;
-    int resto = N % size;
-
+void somar_linha(double *linha_atual, double *linha_pivo, int tamanho) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    int tamanho_local = tamanho / size;
+    int resto = tamanho % size;
     // Calcula os tamanhos locais para todos os processos
     int *tamanhos = (int *)malloc(size * sizeof(int));
     int *deslocamentos = (int *)malloc(size * sizeof(int));
@@ -143,29 +145,25 @@ void somar_linha(double **matriz, int N, int rank, int size, int i, int k) {
     }
 
     double *sublinha = (double *)malloc(tamanhos[rank] * sizeof(double));
-    double *linha_pivo = (double *)malloc(tamanhos[rank] * sizeof(double));
+    double *sublinha_pivo = (double *)malloc(tamanhos[rank] * sizeof(double));
 
-    printf("%d chegou até antes de distribuir os vetores!\n", rank);
     // Distribui o vetor para os processos
-    MPI_Scatterv(matriz[i], tamanhos, deslocamentos, MPI_DOUBLE, sublinha, tamanhos[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Scatterv(matriz[k], tamanhos, deslocamentos, MPI_DOUBLE, linha_pivo, tamanhos[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    printf("%d chegou até depois de distribuir os vetores!\n", rank);
+    MPI_Scatterv(linha_atual, tamanhos, deslocamentos, MPI_DOUBLE, sublinha, tamanhos[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(linha_pivo, tamanhos, deslocamentos, MPI_DOUBLE, sublinha_pivo, tamanhos[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     // Cada processo zera as linhas atribuídas ao pivô
-    for (int j = i; j < tamanhos[rank]; j++) {
-        sublinha[j] += linha_pivo[j];
+    for (int j = 0; j < tamanhos[rank]; j++) {
+        sublinha[j] -= sublinha_pivo[j];
     }
-    printf("%d chegou até depois das operações na linha!\n", rank);
 
     // Coletar as linhas atualizadas nos processos
-    MPI_Gatherv(sublinha, tamanhos[rank], MPI_DOUBLE, matriz[i], tamanhos, deslocamentos, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    printf("%d chegou até o gather!\n", rank);
+    MPI_Gatherv(sublinha, tamanhos[rank], MPI_DOUBLE, linha_atual, tamanhos, deslocamentos, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     // Libera memória
     free(tamanhos);
     free(deslocamentos);
     free(sublinha);
-    free(linha_pivo);
+    free(sublinha_pivo);
 }
 
 void multiplicar_linha(double* linha, int tamanho, double valor) {
@@ -204,10 +202,9 @@ void multiplicar_linha(double* linha, int tamanho, double valor) {
 }
 
 void transformacao_triangular_superior(double **matriz, int n, int rank, int size, int k) {
-    printf("%d chegou até o começo da triangulação!\n", rank);
     // Distribuir o pivô para todos os processos
     double pivo;
-    double* linha;
+    double *linha, *linha_pivo;
     if(rank==0){
         pivo = matriz[k][k];
     } 
@@ -215,19 +212,16 @@ void transformacao_triangular_superior(double **matriz, int n, int rank, int siz
     
     // Atualizar as linhas abaixo do pivô usando somar_linha
     double fator;
-    printf("%d chegou até antes do for!\n", rank);
-    for (int i = k + rank; i < n; i += size) {
+    for (int i = k+1; i < n; i++) {
         if (rank==0){
-            fator = matriz[i][k] / pivo;
+            fator = matriz[i][k]/pivo;
             linha = matriz[i];
+            linha_pivo = matriz[k];
         }
-        printf("%d chegou até antes do bcast do for!\n", rank);
         MPI_Bcast(&fator, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        printf("%d chegou até antes de multiplicar!\n", rank);
-        multiplicar_linha(linha, n, (-fator));
-        printf("%d chegou até antes de somar!\n", rank);
-        somar_linha(matriz, n, rank, size, i, k);
-        printf("%d chegou até o final!\n", rank);
+        multiplicar_linha(linha_pivo, n+1, fator);
+        somar_linha(linha, linha_pivo, n+1);
+        multiplicar_linha(linha_pivo, n+1, 1/fator);
     }
 }
 
@@ -236,7 +230,7 @@ void pivoteamento_parcial(double** matriz, int n){
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     ValorIndice* coluna;
-    for(int i=0; i<n; i++){
+    for(int i=0; i<n-1; i++){
         int tamanho_coluna = n-i;
         if(rank == 0){
             coluna = extrair_coluna(&matriz[i], tamanho_coluna, n, i);
@@ -260,18 +254,17 @@ void pivoteamento_parcial(double** matriz, int n){
         MPI_Bcast(&i_pivo_matriz, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
         // troca a linha atual com a linha do pivô
-        troca_linhas(matriz, n, i, i_pivo_matriz);
+        troca_linhas(matriz, n+1, i, i_pivo_matriz);
         if(rank == 0){
             printf("Matriz após a troca:\n");
             imprimir_matriz(matriz, n);
         }
         // zero os elementos abaixo do pivô ignorando a ultima interação
-        printf("%d chegou até antes da triangulação!\n", rank);
         transformacao_triangular_superior(matriz, n, rank, size, i);
-        // if (rank == 0) {
-        //     printf("Matriz após zerar a coluna %d:\n", i + 1);
-        //     imprimir_matriz(matriz, n);
-        // }
+        if (rank == 0) {
+            printf("Matriz após zerar a coluna %d:\n", i + 1);
+            imprimir_matriz(matriz, n);
+        }
     }
 }
 
@@ -329,7 +322,7 @@ void normalizar_matriz(double **matriz, int n) {
         MPI_Bcast(&pivo, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
         // Scatter da linha
-        scatter_linhas(matriz, linha_local, n, i);
+        scatter_linhas(matriz, linha_local, n+1, i);
 
         // Normalizar localmente
         normalizar_linha(linha_local, n / size, pivo);
@@ -347,4 +340,39 @@ void normalizar_matriz(double **matriz, int n) {
 
     free(linha_local);
     free(linha_global);
+}
+
+// Processo raiz realiza a substituição retroativa
+void substituicao_retroativa(double** matriz, int n, int rank, int size) {
+    double* result = (double*) malloc(n * sizeof(double));
+    double soma_parcial;
+    
+    // Inicialmente, todos os processos conhecem o valor inicial do vetor result como 0
+    for (int i = 0; i < n; i++) {
+        result[i] = 0.0;
+    }
+
+    // Cada processo realiza a substituição retroativa parcial
+    for (int i = n - 1; i >= 0; i--) {
+        // Processo raiz calcula a soma parcial
+        if (rank == 0) {
+            soma_parcial = matriz[i][n];
+            for (int j = i + 1; j < n; j++) {
+                soma_parcial -= matriz[i][j] * result[j];
+            }
+            result[i] = soma_parcial / matriz[i][i];
+        }
+        // Processo raiz comunica o valor de result[i] para todos os outros processos
+        MPI_Bcast(&result[i], 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }
+
+    // Imprimir a solução no processo raiz
+    if (rank == 0) {
+        printf("\nSolution:\n");
+        for (int i = 0; i < n; i++) {
+            printf("x[%d] = %8.4f\n", i, result[i]);
+        }
+    }
+
+    free(result);
 }

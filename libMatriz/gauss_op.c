@@ -39,8 +39,8 @@ void troca_linhas(double **matriz, int n, int linha_1, int linha_2) {
         offset += send_counts[i];
     }
 
-    MPI_Scatterv(linha_1_flat, send_counts, displs, MPI_DOUBLE, sub_linha_1, local_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Scatterv(linha_2_flat, send_counts, displs, MPI_DOUBLE, sub_linha_2, local_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(linha_1_flat, send_counts, displs, MPI_DOUBLE, sub_linha_1, send_counts[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(linha_2_flat, send_counts, displs, MPI_DOUBLE, sub_linha_2, send_counts[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     // Cada processo troca os elementos localmente
     for (int i = 0; i < local_count; i++) {
@@ -50,8 +50,8 @@ void troca_linhas(double **matriz, int n, int linha_1, int linha_2) {
     }
 
     // Processo 0 recolhe os resultados com Reduce
-    MPI_Gatherv(sub_linha_1, local_count, MPI_DOUBLE, linha_1_flat, send_counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    MPI_Gatherv(sub_linha_2, local_count, MPI_DOUBLE, linha_2_flat, send_counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(sub_linha_1, send_counts[rank], MPI_DOUBLE, linha_1_flat, send_counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(sub_linha_2, send_counts[rank], MPI_DOUBLE, linha_2_flat, send_counts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
 
     // Liberar memória local
@@ -130,40 +130,19 @@ ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int r
     return resultado_final;
 }
 
-void pivoteamento_parcial(double** matriz, int n){
-    int rank;
-    ValorIndice* coluna;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    for(int i=0; i<n; i++){
-    int tamanho_coluna = n-i;
-    if(rank == 0){
-        coluna = extrair_coluna(&matriz[i], tamanho_coluna, n, i);
-        // &matriz[i] retorna uma matriz contendo somente linhas a partir de i (n-i linhas totais)
-        printf("\n\n");
-        printf("Passando tamanho_coluna = %d, indice_coluna = %d\n", tamanho_coluna, i);
-        printf("Coluna extraída:\n");
-        imprimir_vetor_valor_indice(coluna, tamanho_coluna);
+void somar_linhas(double **matriz, int N, int rank, int size, int k) {
+    // Cada processo zera as linhas atribuídas ao pivô
+    for (int i = rank+k; i < N; i += size) {
+        double factor = matriz[i][k] / matriz[k][k];
+        for (int j = k; j < N + 1; j++) {
+            matriz[i][j] -= factor * matriz[k][k];
+        }
     }
-    int i_pivo_coluna = achar_maior_da_coluna(coluna, tamanho_coluna, 0).indice; 
-    // sobre a linha acima:
-    // 1. somente a raiz não contém lixo de memória
-    // 2. o vetor coluna é espalhado (scatter) dentro da função, não sendo necessário se preocupar se outros ranks tem lixo em coluna.
-    // 3. o índice retornado é em relação à coluna, que tem linhas do que a matriz da segunda iteração em diante
-    int i_pivo_matriz;
-    if (rank == 0) {
-        i_pivo_matriz = i + i_pivo_coluna; // para obter um índice em relação à matriz, em vez da coluna com linhas a menos.
-        printf("Maior valor encontrado: %f\n", coluna[i_pivo_coluna].valor);
-    }   
 
-    MPI_Bcast(&i_pivo_matriz, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    troca_linhas(matriz, n, i, i_pivo_matriz);
-    if(rank == 0){
-        printf("Matriz após a troca:\n");
-        imprimir_matriz(matriz, n);
-    }
-        
-    }
+    // Coletar as linhas atualizadas nos processos
+    for (int i = rank; i < N; i += size) {
+        MPI_Gather(matriz[i], N + 1, MPI_DOUBLE, matriz, N + 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    }    
 }
 
 void multiplicar_linha(double *vetor, int tamanho, double valor) {
@@ -201,6 +180,42 @@ void multiplicar_linha(double *vetor, int tamanho, double valor) {
     free(tamanhos);
     free(deslocamentos);
     free(subvetor);
+}
+
+void pivoteamento_parcial(double** matriz, int n){
+    int rank;
+    ValorIndice* coluna;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    for(int i=0; i<n; i++){
+        int tamanho_coluna = n-i;
+        if(rank == 0){
+            coluna = extrair_coluna(&matriz[i], tamanho_coluna, n, i);
+            // &matriz[i] retorna uma matriz contendo somente linhas a partir de i (n-i linhas totais)
+            printf("\n\n");
+            printf("Passando tamanho_coluna = %d, indice_coluna = %d\n", tamanho_coluna, i);
+            printf("Coluna extraída:\n");
+            imprimir_vetor_valor_indice(coluna, tamanho_coluna);
+        }
+        int i_pivo_coluna = achar_maior_da_coluna(coluna, tamanho_coluna, 0).indice; 
+        // sobre a linha acima:
+        // 1. somente a raiz não contém lixo de memória
+        // 2. o vetor coluna é espalhado (scatter) dentro da função, não sendo necessário se preocupar se outros ranks tem lixo em coluna.
+        // 3. o índice retornado é em relação à coluna, que tem linhas do que a matriz da segunda iteração em diante
+        int i_pivo_matriz;
+        if (rank == 0) {
+            i_pivo_matriz = i + i_pivo_coluna; // para obter um índice em relação à matriz, em vez da coluna com linhas a menos.
+            printf("Maior valor encontrado: %f\n", coluna[i_pivo_coluna].valor);
+        }   
+
+        MPI_Bcast(&i_pivo_matriz, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+        // troca a linha atual com a linha do pivô
+        troca_linhas(matriz, n, i, i_pivo_matriz);
+        if(rank == 0){
+            printf("Matriz após a troca:\n");
+            imprimir_matriz(matriz, n);
+        }
+    }
 }
 
 void scatter_linhas(double **matriz, double *linha_local, int n, int i_linha) {
@@ -272,7 +287,14 @@ void normalizar_matriz(double **matriz, int n) {
             }
         }
     }
-
+    for (int k = 0; k < n; k++) {
+        somar_linhas(matriz, n, rank, size, k);
+        if (rank == 0) {
+            printf("Matriz após zerar a coluna %d:\n", k + 1);
+            imprimir_matriz(matriz, n);
+        }
+    }
+    
     free(linha_local);
     free(linha_global);
 }

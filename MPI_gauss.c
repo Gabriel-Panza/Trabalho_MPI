@@ -3,7 +3,6 @@
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
-#include "libMatriz/matriz.h"
 #include "libMatriz/gauss_op.c"
 
 int main(int argc, char** argv) {

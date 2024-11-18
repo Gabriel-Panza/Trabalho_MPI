@@ -3,7 +3,7 @@
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
-#include "libMatriz/matriz.h"
+#include "matriz.h"
 
 void troca_linhas(double **matriz, int n, int linha_1, int linha_2) {
     int rank, size;
@@ -60,7 +60,6 @@ void troca_linhas(double **matriz, int n, int linha_1, int linha_2) {
     free(send_counts);
     free(displs);
 }
-
 
 ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int raiz) {
     int rank, num_procs;
@@ -204,7 +203,6 @@ void multiplicar_linha(double *vetor, int tamanho, double valor) {
     free(subvetor);
 }
 
-
 void scatter_linhas(double **matriz, double *linha_local, int n, int i_linha) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -278,6 +276,3 @@ void normalizar_matriz(double **matriz, int n) {
     free(linha_local);
     free(linha_global);
 }
-
-
-

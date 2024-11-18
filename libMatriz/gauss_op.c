@@ -130,18 +130,32 @@ ValorIndice achar_maior_da_coluna(ValorIndice* coluna, int tamanho_coluna, int r
     return resultado_final;
 }
 
-void somar_linhas(double **matriz, int N, int rank, int size, int k) {
+void somar_linha(double **matriz, int N, int rank, int size, int k, double factor) {
+    int tamanho_local = N / size;
+    int resto = N % size;
+
+    // Calcula os tamanhos locais para todos os processos
+    int *tamanhos = (int *)malloc(size * sizeof(int));
+    int *deslocamentos = (int *)malloc(size * sizeof(int));
+    for (int i = 0; i < size; i++) {
+        tamanhos[i] = tamanho_local + (i < resto ? 1 : 0);
+        deslocamentos[i] = (i == 0) ? 0 : deslocamentos[i - 1] + tamanhos[i - 1];
+    }
+
+    double *subvetor = (double *)malloc(tamanhos[rank] * sizeof(double));
+
+    // Distribui o vetor para os processos
+    MPI_Scatterv(matriz[k], tamanhos, deslocamentos, MPI_DOUBLE,
+                 subvetor, tamanhos[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
     // Cada processo zera as linhas atribuídas ao pivô
-    for (int i = rank+k; i < N; i += size) {
-        double factor = matriz[i][k] / matriz[k][k];
-        for (int j = k; j < N + 1; j++) {
-            matriz[i][j] -= factor * matriz[k][k];
-        }
+    for (int j = k; j < N + 1; j++) {
+        subvetor[j] += factor;
     }
 
     // Coletar as linhas atualizadas nos processos
     for (int i = rank; i < N; i += size) {
-        MPI_Gather(matriz[i], N + 1, MPI_DOUBLE, matriz, N + 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gatherv(subvetor, tamanhos[rank], MPI_DOUBLE, matriz[k], tamanhos, deslocamentos, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     }    
 }
 
@@ -182,10 +196,25 @@ void multiplicar_linha(double *vetor, int tamanho, double valor) {
     free(subvetor);
 }
 
+void transformacao_triangular_superior(double **matriz, int n, int rank, int size, int k) {
+    // Distribuir a linha do pivô (linha k) para todos os processos
+    MPI_Bcast(matriz[k], n, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    // Atualizar as linhas abaixo do pivô usando somar_linha
+    for (int i = k + 1 + rank; i < n; i += size) {
+        double fator = matriz[i][k] / matriz[k][k];
+        somar_linha(matriz, n, rank, size, i, fator);
+    }
+
+    // Sincronizar os processos antes de passar para a próxima iteração
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
 void pivoteamento_parcial(double** matriz, int n){
-    int rank;
-    ValorIndice* coluna;
+    int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    ValorIndice* coluna;
     for(int i=0; i<n; i++){
         int tamanho_coluna = n-i;
         if(rank == 0){
@@ -213,6 +242,13 @@ void pivoteamento_parcial(double** matriz, int n){
         troca_linhas(matriz, n, i, i_pivo_matriz);
         if(rank == 0){
             printf("Matriz após a troca:\n");
+            imprimir_matriz(matriz, n);
+        }
+    }
+    for (int k = 0; k < n - 1; k++) {
+        transformacao_triangular_superior(matriz, n, rank, size, k);
+        if (rank == 0) {
+            printf("Matriz após zerar a coluna %d:\n", k + 1);
             imprimir_matriz(matriz, n);
         }
     }
@@ -287,14 +323,7 @@ void normalizar_matriz(double **matriz, int n) {
             }
         }
     }
-    for (int k = 0; k < n; k++) {
-        somar_linhas(matriz, n, rank, size, k);
-        if (rank == 0) {
-            printf("Matriz após zerar a coluna %d:\n", k + 1);
-            imprimir_matriz(matriz, n);
-        }
-    }
-    
+
     free(linha_local);
     free(linha_global);
 }

@@ -4,16 +4,34 @@
 #include "libMatriz/matriz.h"
 
 void gaussElimination(double **U, int n, int rank, int size) {
-    for (int k = 0; k < n; k++) {
+    // Seção 1:
+    // Quando a linha que o processo é responsável chega, ele normaliza o pivô
+    for (int k = 0; k < n; k++) { 
         if (k % size == rank) {
-            for (int j = k + 1; j <= n; j++) {
+            for (int j = k + 1; j <= n; j++) { 
+            // É assumido que os valores à esquerda do pivô são zero 
+            // pois, exceto para a linha 0, que não tem elementos à esquerda,
+            // as colunas à esquerda do pivô já estarão zeradas pela seção 2.
                 U[k][j] /= U[k][k];
             }
             U[k][k] = 1.0;
         }
-        MPI_Bcast(U[k], n + 1, MPI_DOUBLE, k % size, MPI_COMM_WORLD);
+        // todos os processos recebem a linha anterior normalizada 
+        // obs: não houve ganho de tempo por paralelismo relevante até agora, 
+        // foi uma etapa de controle para que todos tenham a linha normalizada.
+        MPI_Bcast(U[k], n + 1, MPI_DOUBLE, k % size, MPI_COMM_WORLD); 
+
+        // Seção 2:
+        // O for e o if abaixo controlam a(s)
+        // linha(s) que cada processo é responsável
+        // Assim, cada processo terá uma ou mais linhas "locais"
+        // e também a linha "global" distribuída para todos
         for (int i = k + 1; i < n; i++) {
             if (i % size == rank) {
+                // Subtraimos de cada linha a linha "global" 
+                // multiplicada pelo valor da coluna do pivô local.
+                // Isso garante que ambas as linhas terão o mesmo valor
+                // na coluna do pivô, resultando em zero ao subtrair.
                 for (int j = k + 1; j <= n; j++) {
                     U[i][j] -= U[i][k] * U[k][j];
                 }
@@ -24,6 +42,9 @@ void gaussElimination(double **U, int n, int rank, int size) {
 }
 
 void backSubstitution(double **U, double *x, int n, int rank, int size) {
+    // De baixo para cima, resolvemos o valor da incógnita da diagonal principal
+    // e transmitimos o resultado para as linhas acima, o que permite as linhas
+    // acima a resolverem suas próprias incógnitas.
     for (int i = n - 1; i >= 0; i--) {
         if (i % size == rank) {
             x[i] = U[i][n];
@@ -49,8 +70,8 @@ int main(int argc, char *argv[]) {
     double start_time, end_time;
     start_time = MPI_Wtime();
 
-    gaussElimination(U, n, rank, size);
-    backSubstitution(U, x, n, rank, size);
+    gaussElimination(U, n, rank, size); // retorna triangular superior
+    backSubstitution(U, x, n, rank, size); // resolve incógnitas de uma triangular superior
 
 
     if (rank == 0) {

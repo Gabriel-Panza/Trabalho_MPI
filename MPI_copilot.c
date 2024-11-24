@@ -45,8 +45,6 @@ int main(int argc, char *argv[]) {
 
     if (rank == 0) {
         gaussElimination(U, n);
-        end_time = MPI_Wtime();
-        printf("Tempo de execução da eliminação de Gauss: %f segundos\n", end_time - start_time);
     }
 
     // Convertendo a matriz 2D para uma matriz 1D para MPI_Bcast

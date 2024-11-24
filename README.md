@@ -2,21 +2,21 @@
 ## Codigo ChatGPT-4
 Para compilar o código com suporte a MPI:
 ```bash
-mpicc MPI_chatgpt_fixed.c libMatriz/matriz.c -o mpi_chatgpt_fixed -lm
+mpicc MPI_copilot.c libMatriz/matriz.c -o MPI_copilot -lm
 ```
 
 Para executar em múltiplos processos (substitua x pelo número de processos):
 ```bash
-mpirun -np x ./mpi_chatgpt_fixed
+mpirun -np x ./MPI_copilot
 ```
 
 ## Código do Grupo
 Para compilar o código com suporte a MPI:
 ```bash
-mpicc MPI_gauss.c libMatriz/matriz.c -o MPI_gauss -lm
+mpicc MPI_copilot_melhorado.c libMatriz/matriz.c -o MPI_copilot_melhorado -lm
 ```
 
 Para executar em múltiplos processos (substitua x pelo número de processos):
 ```bash
-mpirun -np x ./MPI_gauss
+mpirun -np x ./MPI_copilot_melhorado
 ```

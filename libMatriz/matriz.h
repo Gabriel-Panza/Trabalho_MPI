@@ -25,6 +25,6 @@ void liberarMatriz(double** matriz, int n);
 void imprimirVetor(double* vetor, int n);
 
 // Função que combina todas as etapas
-double** criar_matriz(double n);
+double** criar_matriz(int n);
 
 #endif // MATRIZ_PRIMOS_H
